@@ -1,0 +1,40 @@
+# Техническая архитектура и правила проекта GlassNotes
+
+## 1. Стек и запреты
+- Язык: Kotlin. UI: Jetpack Compose (Material 3). Minimum SDK: API 31 (Android 12+).
+- НЕ подключай сторонние базы данных (Room, Realm), DI (Hilt, Dagger) и сетевые библиотеки.
+- Локальная база данных: единый JSON-файл `glass_notes_data.json` во внутренней памяти (`context.filesDir`), сериализация через встроенный в Android SDK `org.json` (`JSONObject`, `JSONArray`).
+- Настройки внешнего вида (тема стекла Dark/Light, сила размытия `blurRadius`, прозрачность карточек `glassAlpha`) храни в `SharedPreferences`.
+- НЕ изменяй `AndroidManifest.xml`, `themes.xml` и настройки прозрачности `window` в `MainActivity.kt` после их первичной настройки, если пользователь прямо не попросит об этом.
+
+## 2. Нативная прозрачность и размытие рабочего стола (API 31+)
+- Окно `MainActivity` должно быть полностью прозрачным (`android:windowIsTranslucent = true`, `android:windowBackground = @android:color/transparent`), чтобы сквозь него просвечивали реальные обои рабочего стола.
+- В `MainActivity.kt` используй `window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)` и динамически обновляй `window.attributes.blurBehindRadius` при изменении пользователем ползунка размытия.
+- Статус-бар и панель навигации должны быть прозрачными (`enableEdgeToEdge` / `WindowCompat.setDecorFitsSystemWindows(window, false)`).
+
+## 3. Две темы стекла и многослойная иерархия
+- Поддерживай два режима темы (`isDarkGlass: Boolean`):
+  - **Тёмная версия (Dark Smoked Glass):**
+    - Слой 0 (Фон экрана): `Color(0xFF0E0E11).copy(alpha = 0.35f)`
+    - Слой 1 (Карточки, папки, плавающие панели): `Color(0xFF1C1C21).copy(alpha = glassAlpha)` + рамка `1.dp` `Color.White.copy(alpha = 0.14f)`
+    - Слой 2 (Внутренний блок контента внутри карточки): `Color(0xFF0D0D10).copy(alpha = (glassAlpha + 0.18f).coerceAtMost(0.92f))`
+    - Текст: основной `Color(0xFFF4F4F5)`, второстепенный `Color(0xFFA1A1AA)`.
+  - **Светлая версия (Light Frosted Glass):**
+    - Слой 0 (Фон экрана): `Color(0xFFF4F4F6).copy(alpha = 0.25f)`
+    - Слой 1 (Карточки, папки, плавающие панели): `Color(0xFFFFFFFF).copy(alpha = glassAlpha)` + рамка `1.dp` `Color.Black.copy(alpha = 0.10f)`
+    - Слой 2 (Внутренний блок контента внутри карточки): `Color(0xFFE4E4E7).copy(alpha = (glassAlpha + 0.15f).coerceAtMost(0.90f))`
+    - Текст: основной `Color(0xFF18181B)`, второстепенный `Color(0xFF52525B)`.
+
+## 4. Структура файлов пакета `com.kirill.glassnotes`
+- `Models.kt` — data-классы `FolderItem`, `ChecklistItem`, `NoteItem` (`id`, `folderId: String?`, `title: String`, `content: String`, `checklist: List<ChecklistItem>`, `isPinned: Boolean`, `isDeleted: Boolean`, `createdAt: Long`), `TaskItem` (`id`, `title: String`, `dueDate: String?`, `isCompleted: Boolean`, `createdAt: Long`), `GlassSettings`.
+- `AppStorage.kt` — чтение/запись `glass_notes_data.json` (с безопасным парсингом `optString`/`optBoolean`) и `SharedPreferences` для настроек стекла, а также генерация JSON для экспорта бэкапа.
+- `MainViewModel.kt` — единое управление состоянием (`StateFlow`) для заметок, папок, задач, поиска, корзины и настроек стекла.
+- `NotesScreen.kt` — главный экран «Заметки» (шапка, поиск по лупе, меню «три точки», лента папок с `All` и `+`, закреплённые и обычные карточки, пустое состояние).
+- `NoteEditorScreen.kt` — полноэкранный редактор с режимом быстрой записи (фокус сразу на текст, автосохранение при выходе назад даже без заголовка и папки).
+- `TasksScreen.kt` — экран «Задачи» с чекбоксами, выбором даты и пустым состоянием.
+- `TrashAndSheets.kt` — экран «Корзина» и нижняя шторка «Настройка стекла» (переключатель Dark/Light + ползунки размытия и прозрачности).
+- `MainActivity.kt` — точка входа, настройка прозрачного окна и нижняя плавающая навигация (слева капсула «Заметки / Задачи», справа круглая кнопка `+`).
+
+## 5. Правила генерации кода
+- Пиши полный рабочий код без заглушек (`// TODO`), с правильными импортами Jetpack Compose и Material Icons Extended (при необходимости используй стандартные `Icons.Rounded` / `Icons.Outlined`, входящие в базовый `androidx.compose.material:material-icons-core`, чтобы не требовалось доустанавливать зависимости).
+- Отвечай на русском языке.
