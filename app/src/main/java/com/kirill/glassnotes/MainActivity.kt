@@ -11,6 +11,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +45,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -108,6 +113,7 @@ private fun GlassNotesApp(viewModel: MainViewModel) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showTaskDialog by rememberSaveable { mutableStateOf(false) }
     var showFolders by rememberSaveable { mutableStateOf(false) }
+    val notesScrollState = rememberScrollState()
 
     val backupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -144,8 +150,68 @@ private fun GlassNotesApp(viewModel: MainViewModel) {
             .background(colors.background)
     ) {
         val target = editorTarget ?: lastActiveEditorTarget
-        when {
-            target != null -> NoteEditorScreen(
+        val overlayVisible = target != null || showTrash || showFolders
+
+        // Основной слой остаётся в композиции, пока поверх открыт редактор,
+        // чтобы NotesScreen сохранял позицию прокрутки.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = if (overlayVisible) 0f else 1f }
+        ) {
+            Crossfade(targetState = currentTab, label = "tab") { tab ->
+                when (tab) {
+                    "tasks" -> TasksScreen(
+                        viewModel = viewModel,
+                        onOpenTrash = { showTrash = true },
+                        onSaveBackup = { backupLauncher.launch("glass_notes_backup.json") },
+                        onOpenSettings = { showSettings = true }
+                    )
+                    else -> NotesScreen(
+                        viewModel = viewModel,
+                        scrollState = notesScrollState,
+                        onOpenNote = { note -> editorState = "edit:${note.id}" },
+                        onOpenTrash = { showTrash = true },
+                        onSaveBackup = { backupLauncher.launch("glass_notes_backup.json") },
+                        onOpenSettings = { showSettings = true },
+                        onOpenFolders = { showFolders = true }
+                    )
+                }
+            }
+            GlassBottomNav(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                currentTab = currentTab,
+                onTabChange = { currentTab = it },
+                onAddClick = {
+                    if (currentTab == "tasks") {
+                        showTaskDialog = true
+                    } else {
+                        editorState = "new:${viewModel.state.value.selectedFolderId.orEmpty()}"
+                    }
+                }
+            )
+        }
+
+        // Прозрачный экран-заглушка: пока открыт полноэкранный слой, он
+        // перехватывает касания, чтобы скрытый основной слой не реагировал на ввод.
+        if (overlayVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false).consume()
+                            do {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { it.consume() }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
+            )
+        }
+
+        if (target != null) {
+            NoteEditorScreen(
                 viewModel = viewModel,
                 target = target,
                 onClose = {
@@ -154,46 +220,20 @@ private fun GlassNotesApp(viewModel: MainViewModel) {
                     lastActiveEditorTarget = null
                 }
             )
-            showTrash -> TrashScreen(
+        }
+
+        if (showTrash) {
+            TrashScreen(
                 viewModel = viewModel,
                 onBack = { showTrash = false }
             )
-            showFolders -> FoldersScreen(
+        }
+
+        if (showFolders) {
+            FoldersScreen(
                 viewModel = viewModel,
                 onBack = { showFolders = false }
             )
-            else -> {
-                Crossfade(targetState = currentTab, label = "tab") { tab ->
-                    when (tab) {
-                        "tasks" -> TasksScreen(
-                            viewModel = viewModel,
-                            onOpenTrash = { showTrash = true },
-                            onSaveBackup = { backupLauncher.launch("glass_notes_backup.json") },
-                            onOpenSettings = { showSettings = true }
-                        )
-                        else -> NotesScreen(
-                            viewModel = viewModel,
-                            onOpenNote = { note -> editorState = "edit:${note.id}" },
-                            onOpenTrash = { showTrash = true },
-                            onSaveBackup = { backupLauncher.launch("glass_notes_backup.json") },
-                            onOpenSettings = { showSettings = true },
-                            onOpenFolders = { showFolders = true }
-                        )
-                    }
-                }
-                GlassBottomNav(
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    currentTab = currentTab,
-                    onTabChange = { currentTab = it },
-                    onAddClick = {
-                        if (currentTab == "tasks") {
-                            showTaskDialog = true
-                        } else {
-                            editorState = "new:${viewModel.state.value.selectedFolderId.orEmpty()}"
-                        }
-                    }
-                )
-            }
         }
 
         if (showSettings) {
