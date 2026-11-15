@@ -58,8 +58,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -160,13 +164,35 @@ fun NotesScreen(
                         .weight(1f)
                 )
             } else {
-                Column(
+                Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .verticalScroll(scrollState)
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .clipToBounds()
+                        .then(
+                            if (state.settings.isGlassEnabled) {
+                                Modifier
+                                    .graphicsLayer { alpha = 0.99f }
+                                    .drawWithContent {
+                                        drawContent()
+                                        drawRect(
+                                            brush = Brush.verticalGradient(
+                                                0.0f to Color.Transparent,
+                                                0.04f to Color.Black,
+                                                1.0f to Color.Black
+                                            ),
+                                            blendMode = BlendMode.DstIn
+                                        )
+                                    }
+                            } else Modifier
+                        )
                 ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState)
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
                     if (pinnedNotes.isNotEmpty()) {
                         SectionHeader("Закреплённые")
                         Spacer(Modifier.height(6.dp))
@@ -220,6 +246,22 @@ fun NotesScreen(
                     }
                     // Отступ под плавающую нижнюю навигацию.
                     Spacer(Modifier.height(92.dp))
+                    }
+
+                    if (!state.settings.isGlassEnabled) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .height(20.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        0.0f to colors.background,
+                                        1.0f to Color.Transparent
+                                    )
+                                )
+                        )
+                    }
                 }
             }
         }
@@ -639,20 +681,6 @@ private fun NoteCard(
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
-                AnimatedVisibility(
-                    visible = !selectionMode,
-                    enter = scaleIn(tween(180)) + fadeIn(tween(180)),
-                    exit = scaleOut(tween(140)) + fadeOut(tween(140))
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_push_pin),
-                        contentDescription = "Закрепить",
-                        tint = if (note.isPinned) ClaretLight else colors.textSecondary,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clickable(onClick = onTogglePin)
-                    )
-                }
             }
 
             if (note.content.isNotBlank()) {
@@ -687,6 +715,29 @@ private fun NoteCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.textSecondary
             )
+        }
+
+        AnimatedVisibility(
+            visible = !selectionMode,
+            modifier = Modifier.align(Alignment.TopEnd),
+            enter = scaleIn(tween(180)) + fadeIn(tween(180)),
+            exit = scaleOut(tween(140)) + fadeOut(tween(140))
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 10.dp, end = 10.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onTogglePin),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_push_pin),
+                    contentDescription = "Закрепить",
+                    tint = if (note.isPinned) ClaretLight else colors.textSecondary,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
         }
 
         AnimatedVisibility(
