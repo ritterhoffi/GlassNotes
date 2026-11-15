@@ -2,6 +2,8 @@ package com.kirill.glassnotes
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -24,6 +26,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -51,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -68,7 +73,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -76,18 +83,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.kirill.glassnotes.ui.theme.ClaretAccent
 import com.kirill.glassnotes.ui.theme.ClaretLight
 import com.kirill.glassnotes.ui.theme.ClaretPinnedBorder
 import com.kirill.glassnotes.ui.theme.ClaretPinnedTint
 import com.kirill.glassnotes.ui.theme.LocalGlassColors
+import kotlinx.coroutines.delay
 
 @Composable
 fun NotesScreen(
     viewModel: MainViewModel,
     scrollState: ScrollState,
+    cardHeights: MutableMap<String, Int>,
     onOpenNote: (NoteItem) -> Unit,
     onOpenTrash: () -> Unit,
     onSaveBackup: () -> Unit,
@@ -100,7 +112,15 @@ fun NotesScreen(
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var selectedNoteIds by remember { mutableStateOf(setOf<String>()) }
+    var lastToggledNoteId by remember { mutableStateOf<String?>(null) }
     val haptic = LocalHapticFeedback.current
+
+    LaunchedEffect(lastToggledNoteId) {
+        if (lastToggledNoteId != null) {
+            delay(600)
+            lastToggledNoteId = null
+        }
+    }
 
     val activeNotes = state.notes.filter { !it.isDeleted }.sortedBy { it.order }
     val folderFiltered = if (state.selectedFolderId == null) {
@@ -193,59 +213,28 @@ fun NotesScreen(
                             .verticalScroll(scrollState)
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                    if (pinnedNotes.isNotEmpty()) {
-                        SectionHeader("Закреплённые")
-                        Spacer(Modifier.height(6.dp))
-                        NotesGrid(notes = pinnedNotes) { note ->
-                            NoteCard(
-                                note = note,
-                                isDarkTheme = state.settings.isDarkGlass,
-                                isSelected = note.id in selectedNoteIds,
-                                selectionMode = selectedNoteIds.isNotEmpty(),
-                                onClick = {
-                                    if (selectedNoteIds.isNotEmpty()) {
-                                        selectedNoteIds = if (note.id in selectedNoteIds) selectedNoteIds - note.id else selectedNoteIds + note.id
-                                    } else {
-                                        onOpenNote(note)
-                                    }
-                                },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    selectedNoteIds = selectedNoteIds + note.id
-                                },
-                                onTogglePin = { viewModel.toggleNotePin(note.id) }
-                            )
-                        }
-                    }
-                    if (regularNotes.isNotEmpty()) {
-                        if (pinnedNotes.isNotEmpty()) {
-                            Spacer(Modifier.height(16.dp))
-                        }
-                        SectionHeader("Другие")
-                        Spacer(Modifier.height(6.dp))
-                        NotesGrid(notes = regularNotes) { note ->
-                            NoteCard(
-                                note = note,
-                                isDarkTheme = state.settings.isDarkGlass,
-                                isSelected = note.id in selectedNoteIds,
-                                selectionMode = selectedNoteIds.isNotEmpty(),
-                                onClick = {
-                                    if (selectedNoteIds.isNotEmpty()) {
-                                        selectedNoteIds = if (note.id in selectedNoteIds) selectedNoteIds - note.id else selectedNoteIds + note.id
-                                    } else {
-                                        onOpenNote(note)
-                                    }
-                                },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    selectedNoteIds = selectedNoteIds + note.id
-                                },
-                                onTogglePin = { viewModel.toggleNotePin(note.id) }
-                            )
-                        }
-                    }
-                    // Отступ под плавающую нижнюю навигацию.
-                    Spacer(Modifier.height(92.dp))
+                        FlyingNotesGrid(
+                            cardHeights = cardHeights,
+                            selectedFolderId = state.selectedFolderId,
+                            pinnedNotes = pinnedNotes,
+                            regularNotes = regularNotes,
+                            isDarkTheme = state.settings.isDarkGlass,
+                            selectedNoteIds = selectedNoteIds,
+                            lastToggledNoteId = lastToggledNoteId,
+                            onOpenNote = onOpenNote,
+                            onToggleSelect = { note ->
+                                selectedNoteIds = if (note.id in selectedNoteIds) selectedNoteIds - note.id else selectedNoteIds + note.id
+                            },
+                            onLongPress = { note ->
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                selectedNoteIds = selectedNoteIds + note.id
+                            },
+                            onTogglePin = { note ->
+                                lastToggledNoteId = note.id
+                                viewModel.toggleNotePin(note.id)
+                            }
+                        )
+                        Spacer(Modifier.height(92.dp))
                     }
 
                     if (!state.settings.isGlassEnabled) {
@@ -596,28 +585,201 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun NotesGrid(
-    notes: List<NoteItem>,
-    content: @Composable (NoteItem) -> Unit
+private fun FlyingNotesGrid(
+    cardHeights: MutableMap<String, Int>,
+    selectedFolderId: String?,
+    pinnedNotes: List<NoteItem>,
+    regularNotes: List<NoteItem>,
+    isDarkTheme: Boolean,
+    selectedNoteIds: Set<String>,
+    lastToggledNoteId: String?,
+    onOpenNote: (NoteItem) -> Unit,
+    onToggleSelect: (NoteItem) -> Unit,
+    onLongPress: (NoteItem) -> Unit,
+    onTogglePin: (NoteItem) -> Unit
 ) {
-    val left = notes.filterIndexed { index, _ -> index % 2 == 0 }
-    val right = notes.filterIndexed { index, _ -> index % 2 == 1 }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    val localDensity = LocalDensity.current
+    var pinnedHeaderHeight by remember { mutableStateOf(0.dp) }
+    var regularHeaderHeight by remember { mutableStateOf(0.dp) }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val gap = 12.dp
+        val sectionGap = 16.dp
+        val headerGap = 6.dp
+        val columnWidth = (maxWidth - gap) / 2
+
+        val pinnedPositions = mutableMapOf<String, Pair<Dp, Dp>>()
+        val regularPositions = mutableMapOf<String, Pair<Dp, Dp>>()
+
+        val pinnedCardsTop = if (pinnedNotes.isNotEmpty()) pinnedHeaderHeight + headerGap else 0.dp
+
+        var leftHeight = 0.dp
+        var rightHeight = 0.dp
+        for (note in pinnedNotes) {
+            val h = Dp((cardHeights[note.id] ?: 0) / localDensity.density)
+            if (leftHeight <= rightHeight) {
+                pinnedPositions[note.id] = 0.dp to (pinnedCardsTop + leftHeight)
+                leftHeight += h + gap
+            } else {
+                pinnedPositions[note.id] = (columnWidth + gap) to (pinnedCardsTop + rightHeight)
+                rightHeight += h + gap
+            }
+        }
+        val pinnedSectionHeight = maxOf(leftHeight, rightHeight)
+
+        val regularHeaderY = if (regularNotes.isNotEmpty()) {
+            if (pinnedNotes.isNotEmpty()) pinnedCardsTop + pinnedSectionHeight + sectionGap else 0.dp
+        } else {
+            0.dp
+        }
+
+        val regularCardsTop = if (regularNotes.isNotEmpty()) regularHeaderY + regularHeaderHeight + headerGap else 0.dp
+        leftHeight = 0.dp
+        rightHeight = 0.dp
+        for (note in regularNotes) {
+            val h = Dp((cardHeights[note.id] ?: 0) / localDensity.density)
+            if (leftHeight <= rightHeight) {
+                regularPositions[note.id] = 0.dp to (regularCardsTop + leftHeight)
+                leftHeight += h + gap
+            } else {
+                regularPositions[note.id] = (columnWidth + gap) to (regularCardsTop + rightHeight)
+                rightHeight += h + gap
+            }
+        }
+        val regularSectionHeight = maxOf(leftHeight, rightHeight)
+
+        val totalHeight = when {
+            regularNotes.isNotEmpty() -> regularCardsTop + regularSectionHeight
+            pinnedNotes.isNotEmpty() -> pinnedCardsTop + pinnedSectionHeight
+            else -> 0.dp
+        }
+
+        val gridMeasured = (pinnedNotes + regularNotes).all { (cardHeights[it.id] ?: 0) > 0 }
+
+        val animatedTotalHeight = remember(selectedFolderId, gridMeasured) { Animatable(totalHeight, Dp.VectorConverter) }
+        LaunchedEffect(selectedFolderId, totalHeight) {
+            if (gridMeasured && animatedTotalHeight.value != totalHeight) {
+                animatedTotalHeight.animateTo(totalHeight, spring(dampingRatio = 0.82f, stiffness = 300f))
+            }
+        }
+        val animatedRegularHeaderY = remember(selectedFolderId, gridMeasured) { Animatable(regularHeaderY, Dp.VectorConverter) }
+        LaunchedEffect(selectedFolderId, regularHeaderY) {
+            if (gridMeasured && animatedRegularHeaderY.value != regularHeaderY) {
+                animatedRegularHeaderY.animateTo(regularHeaderY, spring(dampingRatio = 0.78f, stiffness = 260f))
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(animatedTotalHeight.value)
+        ) {
+            if (pinnedNotes.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { pinnedHeaderHeight = Dp(it.height / localDensity.density) }
+                ) {
+                    SectionHeader("Закреплённые")
+                }
+            }
+            if (regularNotes.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset(y = animatedRegularHeaderY.value)
+                        .onSizeChanged { regularHeaderHeight = Dp(it.height / localDensity.density) }
+                ) {
+                    SectionHeader("Другие")
+                }
+            }
+
+            (pinnedNotes + regularNotes).forEach { note ->
+                val pos = if (note.isPinned) pinnedPositions[note.id] else regularPositions[note.id]
+                if (pos != null) {
+                    key(note.id) {
+                        FlyingCard(
+                            note = note,
+                            selectedFolderId = selectedFolderId,
+                            targetX = pos.first,
+                            targetY = pos.second,
+                            columnWidth = columnWidth,
+                            isElevated = lastToggledNoteId == note.id,
+                            isMeasured = (cardHeights[note.id] ?: 0) > 0,
+                            onHeightMeasured = { h -> cardHeights[note.id] = h },
+                            isDarkTheme = isDarkTheme,
+                            isSelected = note.id in selectedNoteIds,
+                            selectionMode = selectedNoteIds.isNotEmpty(),
+                            onClick = {
+                                if (selectedNoteIds.isNotEmpty()) {
+                                    onToggleSelect(note)
+                                } else {
+                                    onOpenNote(note)
+                                }
+                            },
+                            onLongClick = { onLongPress(note) },
+                            onTogglePin = { onTogglePin(note) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlyingCard(
+    note: NoteItem,
+    selectedFolderId: String?,
+    targetX: Dp,
+    targetY: Dp,
+    columnWidth: Dp,
+    isElevated: Boolean,
+    isMeasured: Boolean,
+    onHeightMeasured: (Int) -> Unit,
+    isDarkTheme: Boolean,
+    isSelected: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onTogglePin: () -> Unit
+) {
+    val localDensity = LocalDensity.current
+    val animatedX = remember(selectedFolderId, note.id, isMeasured) { Animatable(targetX, Dp.VectorConverter) }
+    val animatedY = remember(selectedFolderId, note.id, isMeasured) { Animatable(targetY, Dp.VectorConverter) }
+    LaunchedEffect(selectedFolderId, note.id, targetX) {
+        if (isMeasured && animatedX.value != targetX) {
+            animatedX.animateTo(targetX, spring(dampingRatio = 0.78f, stiffness = 260f))
+        }
+    }
+    LaunchedEffect(selectedFolderId, note.id, targetY) {
+        if (isMeasured && animatedY.value != targetY) {
+            animatedY.animateTo(targetY, spring(dampingRatio = 0.78f, stiffness = 260f))
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer { alpha = if (isMeasured) 1f else 0f }
+            .offset {
+                IntOffset(
+                    x = (animatedX.value.value * localDensity.density + 0.5f).toInt(),
+                    y = (animatedY.value.value * localDensity.density + 0.5f).toInt()
+                )
+            }
+            .width(columnWidth)
+            .onSizeChanged { onHeightMeasured(it.height) }
+            .zIndex(if (isElevated) 1f else 0f)
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            left.forEach { content(it) }
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            right.forEach { content(it) }
-        }
+        NoteCard(
+            note = note,
+            isDarkTheme = isDarkTheme,
+            isSelected = isSelected,
+            selectionMode = selectionMode,
+            onClick = onClick,
+            onLongClick = onLongClick,
+            onTogglePin = onTogglePin
+        )
     }
 }
 

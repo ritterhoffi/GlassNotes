@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -114,6 +115,7 @@ private fun GlassNotesApp(viewModel: MainViewModel) {
     var showTaskDialog by rememberSaveable { mutableStateOf(false) }
     var showFolders by rememberSaveable { mutableStateOf(false) }
     val notesScrollState = rememberScrollState()
+    val cardHeights = remember { mutableStateMapOf<String, Int>() }
 
     val backupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -170,6 +172,7 @@ private fun GlassNotesApp(viewModel: MainViewModel) {
                     else -> NotesScreen(
                         viewModel = viewModel,
                         scrollState = notesScrollState,
+                        cardHeights = cardHeights,
                         onOpenNote = { note -> editorState = "edit:${note.id}" },
                         onOpenTrash = { showTrash = true },
                         onSaveBackup = { backupLauncher.launch("glass_notes_backup.json") },
