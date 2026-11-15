@@ -1,10 +1,15 @@
 package com.kirill.glassnotes
 
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,9 +42,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
+import com.kirill.glassnotes.ui.theme.ClaretAccent
 import com.kirill.glassnotes.ui.theme.GlassNotesTheme
 import com.kirill.glassnotes.ui.theme.LocalGlassColors
 
@@ -48,18 +55,37 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+        val initialBlurRadius = AppStorage(this).loadSettings().blurRadius
+        window.attributes = window.attributes.apply { blurBehindRadius = initialBlurRadius }
         val viewModel = ViewModelProvider(this)[MainViewModel::class.java]
 
         setContent {
             val state by viewModel.state.collectAsState()
+            val isGlassEnabled = state.settings.isGlassEnabled
             val blurRadius = state.settings.blurRadius
-            LaunchedEffect(blurRadius) {
-                window.attributes = window.attributes.apply { blurBehindRadius = blurRadius }
+            LaunchedEffect(isGlassEnabled, blurRadius) {
+                window.attributes = window.attributes.apply { blurBehindRadius = if (isGlassEnabled) 90 else 0 }
+                if (isGlassEnabled) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        window.setBackgroundBlurRadius(90)
+                    }
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        window.setBackgroundBlurRadius(0)
+                    }
+                }
             }
 
             GlassNotesTheme(
                 isDarkGlass = state.settings.isDarkGlass,
-                glassAlpha = state.settings.glassAlpha
+                glassAlpha = state.settings.glassAlpha,
+                backgroundAlpha = state.settings.backgroundAlpha,
+                isGlassEnabled = state.settings.isGlassEnabled
             ) {
                 GlassNotesApp(viewModel)
             }
@@ -75,36 +101,112 @@ sealed interface EditorTarget {
 @Composable
 private fun GlassNotesApp(viewModel: MainViewModel) {
     val colors = LocalGlassColors.current
+    val context = LocalContext.current
     var currentTab by rememberSaveable { mutableStateOf("notes") }
-    var editorTarget by remember { mutableStateOf<EditorTarget?>(null) }
+    var editorState by rememberSaveable { mutableStateOf<String?>(null) }
+    var showTrash by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showTaskDialog by rememberSaveable { mutableStateOf(false) }
+    var showFolders by rememberSaveable { mutableStateOf(false) }
+
+    val backupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val json = viewModel.buildBackupJson()
+                context.contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(json.toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(context, "Копия сохранена", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Не удалось сохранить копию", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val rawEditor = editorState
+    val editorTarget: EditorTarget? = when {
+        rawEditor == null -> null
+        rawEditor.startsWith("edit:") -> EditorTarget.Edit(rawEditor.removePrefix("edit:"))
+        rawEditor.startsWith("new:") -> EditorTarget.New(rawEditor.removePrefix("new:").ifEmpty { null })
+        else -> null
+    }
+
+    var lastActiveEditorTarget by remember { mutableStateOf<EditorTarget?>(null) }
+    if (editorTarget != null) {
+        lastActiveEditorTarget = editorTarget
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
     ) {
-        val target = editorTarget
-        if (target != null) {
-            NoteEditorScreen(
+        val target = editorTarget ?: lastActiveEditorTarget
+        when {
+            target != null -> NoteEditorScreen(
                 viewModel = viewModel,
                 target = target,
-                onClose = { editorTarget = null }
+                onClose = {
+                    viewModel.setSearchQuery("")
+                    editorState = null
+                    lastActiveEditorTarget = null
+                }
             )
-        } else {
-            when (currentTab) {
-                "tasks" -> TasksScreen(viewModel)
-                else -> NotesScreen(
-                    viewModel = viewModel,
-                    onOpenNote = { note -> editorTarget = EditorTarget.Edit(note.id) }
+            showTrash -> TrashScreen(
+                viewModel = viewModel,
+                onBack = { showTrash = false }
+            )
+            showFolders -> FoldersScreen(
+                viewModel = viewModel,
+                onBack = { showFolders = false }
+            )
+            else -> {
+                Crossfade(targetState = currentTab, label = "tab") { tab ->
+                    when (tab) {
+                        "tasks" -> TasksScreen(
+                            viewModel = viewModel,
+                            onOpenTrash = { showTrash = true },
+                            onSaveBackup = { backupLauncher.launch("glass_notes_backup.json") },
+                            onOpenSettings = { showSettings = true }
+                        )
+                        else -> NotesScreen(
+                            viewModel = viewModel,
+                            onOpenNote = { note -> editorState = "edit:${note.id}" },
+                            onOpenTrash = { showTrash = true },
+                            onSaveBackup = { backupLauncher.launch("glass_notes_backup.json") },
+                            onOpenSettings = { showSettings = true },
+                            onOpenFolders = { showFolders = true }
+                        )
+                    }
+                }
+                GlassBottomNav(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    currentTab = currentTab,
+                    onTabChange = { currentTab = it },
+                    onAddClick = {
+                        if (currentTab == "tasks") {
+                            showTaskDialog = true
+                        } else {
+                            editorState = "new:${viewModel.state.value.selectedFolderId.orEmpty()}"
+                        }
+                    }
                 )
             }
-            GlassBottomNav(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                currentTab = currentTab,
-                onTabChange = { currentTab = it },
-                onAddClick = {
-                    editorTarget = EditorTarget.New(viewModel.state.value.selectedFolderId)
-                }
+        }
+
+        if (showSettings) {
+            GlassSettingsSheet(
+                viewModel = viewModel,
+                onDismiss = { showSettings = false }
+            )
+        }
+
+        if (showTaskDialog) {
+            NewTaskDialog(
+                viewModel = viewModel,
+                onDismiss = { showTaskDialog = false }
             )
         }
     }
@@ -151,15 +253,14 @@ private fun GlassBottomNav(
             modifier = Modifier
                 .size(58.dp)
                 .clip(CircleShape)
-                .background(colors.card)
-                .border(1.dp, colors.cardBorder, CircleShape)
-                .clickable(onClick = onAddClick),
+                .background(ClaretAccent)
+                .springClickable(onClick = onAddClick),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_add),
-                contentDescription = "Новая заметка",
-                tint = colors.textPrimary,
+                contentDescription = "Добавить",
+                tint = Color.White,
                 modifier = Modifier.size(26.dp)
             )
         }
@@ -178,7 +279,7 @@ private fun GlassTabItem(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .background(if (selected) colors.innerBlock else Color.Transparent)
-            .clickable(onClick = onClick)
+            .springClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center

@@ -15,3 +15,13 @@ val LightCard = Color(0xFFFFFFFF)
 val LightInnerBlock = Color(0xFFE4E4E7)
 val LightTextPrimary = Color(0xFF18181B)
 val LightTextSecondary = Color(0xFF52525B)
+
+// Фирменный бордовый акцент
+val ClaretAccent = Color(0xFF8E2443)
+val ClaretLight = Color(0xFFB8335A)
+val ClaretPinnedBorder = Color(0xFF9E2A4B)
+val ClaretPinnedTint = Color(0xFF8E2443).copy(alpha = 0.14f)
+
+// Сплошные (непрозрачные) цвета для выключенного стекла
+val DarkSolidBackground = Color(0xFF121215)
+val DarkSolidCard = Color(0xFF1E1E24)

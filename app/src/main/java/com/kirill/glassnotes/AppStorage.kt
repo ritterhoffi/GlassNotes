@@ -66,15 +66,13 @@ class AppStorage(context: Context) {
 
     fun loadSettings(): GlassSettings = GlassSettings(
         isDarkGlass = prefs.getBoolean(KEY_DARK, true),
-        blurRadius = prefs.getInt(KEY_BLUR, 25),
-        glassAlpha = prefs.getFloat(KEY_ALPHA, 0.7f)
+        isGlassEnabled = prefs.getBoolean(KEY_GLASS_ENABLED, true)
     )
 
     fun saveSettings(settings: GlassSettings) {
         prefs.edit()
             .putBoolean(KEY_DARK, settings.isDarkGlass)
-            .putInt(KEY_BLUR, settings.blurRadius)
-            .putFloat(KEY_ALPHA, settings.glassAlpha)
+            .putBoolean(KEY_GLASS_ENABLED, settings.isGlassEnabled)
             .apply()
     }
 
@@ -89,7 +87,8 @@ class AppStorage(context: Context) {
                 FolderItem(
                     id = o.optString("id"),
                     name = o.optString("name"),
-                    createdAt = o.optLong("createdAt")
+                    createdAt = o.optLong("createdAt"),
+                    order = o.optInt("order", 0)
                 )
             )
         }
@@ -124,7 +123,8 @@ class AppStorage(context: Context) {
                     checklist = checklist,
                     isPinned = o.optBoolean("isPinned"),
                     isDeleted = o.optBoolean("isDeleted"),
-                    createdAt = o.optLong("createdAt")
+                    createdAt = o.optLong("createdAt"),
+                    order = o.optInt("order", 0)
                 )
             )
         }
@@ -155,6 +155,7 @@ class AppStorage(context: Context) {
         put("id", id)
         put("name", name)
         put("createdAt", createdAt)
+        put("order", order)
     }
 
     private fun NoteItem.toJson(): JSONObject = JSONObject().apply {
@@ -175,6 +176,7 @@ class AppStorage(context: Context) {
         put("isPinned", isPinned)
         put("isDeleted", isDeleted)
         put("createdAt", createdAt)
+        put("order", order)
     }
 
     private fun TaskItem.toJson(): JSONObject = JSONObject().apply {
@@ -194,8 +196,7 @@ class AppStorage(context: Context) {
         const val KEY_TASKS = "tasks"
 
         const val KEY_DARK = "isDarkGlass"
-        const val KEY_BLUR = "blurRadius"
-        const val KEY_ALPHA = "glassAlpha"
+        const val KEY_GLASS_ENABLED = "isGlassEnabled"
     }
 }
 

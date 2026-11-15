@@ -4,7 +4,8 @@ package com.kirill.glassnotes
 data class FolderItem(
     val id: String,
     val name: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val order: Int = 0
 )
 
 /** Пункт чек-листа внутри заметки. */
@@ -23,7 +24,8 @@ data class NoteItem(
     val checklist: List<ChecklistItem>,
     val isPinned: Boolean,
     val isDeleted: Boolean,
-    val createdAt: Long
+    val createdAt: Long,
+    val order: Int = 0
 )
 
 /** Задача с опциональной датой выполнения. */
@@ -38,8 +40,18 @@ data class TaskItem(
 /** Настройки внешнего вида стекла. */
 data class GlassSettings(
     val isDarkGlass: Boolean = true,
-    /** Сила размытия рабочего стола в пикселях (0..150). */
-    val blurRadius: Int = 25,
-    /** Прозрачность карточек (0f..1f). */
-    val glassAlpha: Float = 0.7f
+    /** Режим «прозрачного стекла» (размытие + полупрозрачные слои). */
+    val isGlassEnabled: Boolean = true
 )
+
+/** Эффективный радиус размытия обоев в зависимости от режима стекла. */
+val GlassSettings.blurRadius: Int
+    get() = if (isGlassEnabled) 90 else 0
+
+/** Эффективная плотность фона экрана. */
+val GlassSettings.backgroundAlpha: Float
+    get() = if (isGlassEnabled) 0.40f else 1.0f
+
+/** Эффективная плотность карточек. */
+val GlassSettings.glassAlpha: Float
+    get() = if (isGlassEnabled) 0.90f else 1.0f

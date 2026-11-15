@@ -1,30 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-32,-1L31,63.928z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:endX="85.84757"
-                android:endY="92.4963"
-                android:startX="42.9492"
-                android:startY="49.59793"
-                android:type="linear">
-                <item
-                    android:color="#44000000"
-                    android:offset="0.0" />
-                <item
-                    android:color="#00000000"
-                    android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
-    <path
-        android:fillColor="#FFFFFF"
-        android:fillType="nonZero"
-        android:pathData="M65.3,45.828l3.8,-6.6c0.2,-0.4 0.1,-0.9 -0.3,-1.1c-0.4,-0.2 -0.9,-0.1 -1.1,0.3l-3.9,6.7c-6.3,-2.8 -13.4,-2.8 -19.7,0l-3.9,-6.7c-0.2,-0.4 -0.7,-0.5 -1.1,-0.3C38.8,38.328 38.7,38.828 38.9,39.228l3.8,6.6C36.2,49.428 31.7,56.028 31,63.928h46C76.3,56.028 71.8,49.428 65.3,45.828zM43.4,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2c-0.3,-0.7 -0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C45.3,56.528 44.5,57.328 43.4,57.328L43.4,57.328zM64.6,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2s-0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C66.5,56.528 65.6,57.328 64.6,57.328L64.6,57.328z"
-        android:strokeWidth="1"
-        android:strokeColor="#00000000" />
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+
+    <group
+        android:pivotX="512"
+        android:pivotY="512"
+        android:scaleX="0.62"
+        android:scaleY="0.62">
+
+        <!-- Карточка фолио -->
+        <path
+            android:pathData="M282,176 L742,176 A58,58 0 0 1 800,234 L800,790 A58,58 0 0 1 742,848 L282,848 A58,58 0 0 1 224,790 L224,234 A58,58 0 0 1 282,176 Z"
+            android:strokeColor="#421E2A"
+            android:strokeWidth="6">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="220"
+                    android:startY="168"
+                    android:endX="804"
+                    android:endY="856">
+                    <item android:color="#27141B" android:offset="0.0" />
+                    <item android:color="#1B0D12" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Верхний блик карточки -->
+        <path
+            android:pathData="M282,180 H742"
+            android:strokeColor="#33E8B4C2"
+            android:strokeWidth="3"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000" />
+
+        <!-- Заголовок (белая плашка) -->
+        <path
+            android:pathData="M315,272 L481,272 A15,15 0 0 1 496,287 A15,15 0 0 1 481,302 L315,302 A15,15 0 0 1 300,287 A15,15 0 0 1 315,272 Z"
+            android:fillColor="#E6DDD8" />
+
+        <!-- Строки текста -->
+        <path
+            android:pathData="M309,370 L535,370 A9,9 0 0 1 544,379 A9,9 0 0 1 535,388 L309,388 A9,9 0 0 1 300,379 A9,9 0 0 1 309,370 Z"
+            android:fillColor="#57E6DDD8" />
+        <path
+            android:pathData="M309,444 L715,444 A9,9 0 0 1 724,453 A9,9 0 0 1 715,462 L309,462 A9,9 0 0 1 300,453 A9,9 0 0 1 309,444 Z"
+            android:fillColor="#57E6DDD8" />
+        <path
+            android:pathData="M309,518 L715,518 A9,9 0 0 1 724,527 A9,9 0 0 1 715,536 L309,536 A9,9 0 0 1 300,527 A9,9 0 0 1 309,518 Z"
+            android:fillColor="#57E6DDD8" />
+        <path
+            android:pathData="M309,592 L659,592 A9,9 0 0 1 668,601 A9,9 0 0 1 659,610 L309,610 A9,9 0 0 1 300,601 A9,9 0 0 1 309,592 Z"
+            android:fillColor="#57E6DDD8" />
+        <path
+            android:pathData="M309,666 L511,666 A9,9 0 0 1 520,675 A9,9 0 0 1 511,684 L309,684 A9,9 0 0 1 300,675 A9,9 0 0 1 309,666 Z"
+            android:fillColor="#57E6DDD8" />
+
+        <!-- Бордовая закладка -->
+        <path android:pathData="M604,176 H706 V554 L655,504 L604,554 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="655"
+                    android:startY="176"
+                    android:endX="655"
+                    android:endY="554">
+                    <item android:color="#972B46" android:offset="0.0" />
+                    <item android:color="#761E34" android:offset="0.52" />
+                    <item android:color="#49101E" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Верхний блик закладки -->
+        <path
+            android:pathData="M608,179 H702"
+            android:strokeColor="#33E8B4C2"
+            android:strokeWidth="3"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000" />
+    </group>
 </vector>

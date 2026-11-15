@@ -21,39 +21,49 @@ data class GlassColors(
     val ripple: Color
 )
 
-fun darkGlassColors(glassAlpha: Float): GlassColors = GlassColors(
-    background = DarkBackground.copy(alpha = 0.35f),
-    card = DarkCard.copy(alpha = glassAlpha),
-    cardBorder = Color.White.copy(alpha = 0.14f),
-    innerBlock = DarkInnerBlock.copy(alpha = (glassAlpha + 0.18f).coerceAtMost(0.92f)),
-    textPrimary = DarkTextPrimary,
-    textSecondary = DarkTextSecondary,
-    onTextPrimary = DarkBackground,
-    divider = Color.White.copy(alpha = 0.10f),
-    ripple = Color.White.copy(alpha = 0.12f)
-)
+fun darkGlassColors(glassAlpha: Float, backgroundAlpha: Float, isGlassEnabled: Boolean): GlassColors {
+    val baseBackground = if (isGlassEnabled) DarkBackground else DarkSolidBackground
+    val baseCard = if (isGlassEnabled) DarkCard else DarkSolidCard
+    val innerAlpha = if (isGlassEnabled) (glassAlpha + 0.18f).coerceAtMost(0.92f) else 1f
+    return GlassColors(
+        background = baseBackground.copy(alpha = backgroundAlpha),
+        card = baseCard.copy(alpha = glassAlpha),
+        cardBorder = Color.White.copy(alpha = 0.14f),
+        innerBlock = DarkInnerBlock.copy(alpha = innerAlpha),
+        textPrimary = DarkTextPrimary,
+        textSecondary = DarkTextSecondary,
+        onTextPrimary = DarkBackground,
+        divider = Color.White.copy(alpha = 0.10f),
+        ripple = Color.White.copy(alpha = 0.12f)
+    )
+}
 
-fun lightGlassColors(glassAlpha: Float): GlassColors = GlassColors(
-    background = LightBackground.copy(alpha = 0.25f),
-    card = LightCard.copy(alpha = glassAlpha),
-    cardBorder = Color.Black.copy(alpha = 0.10f),
-    innerBlock = LightInnerBlock.copy(alpha = (glassAlpha + 0.15f).coerceAtMost(0.90f)),
-    textPrimary = LightTextPrimary,
-    textSecondary = LightTextSecondary,
-    onTextPrimary = Color.White,
-    divider = Color.Black.copy(alpha = 0.08f),
-    ripple = Color.Black.copy(alpha = 0.10f)
-)
+fun lightGlassColors(glassAlpha: Float, backgroundAlpha: Float, isGlassEnabled: Boolean): GlassColors {
+    val innerAlpha = if (isGlassEnabled) (glassAlpha + 0.15f).coerceAtMost(0.90f) else 1f
+    return GlassColors(
+        background = LightBackground.copy(alpha = backgroundAlpha),
+        card = LightCard.copy(alpha = glassAlpha),
+        cardBorder = Color.Black.copy(alpha = 0.10f),
+        innerBlock = LightInnerBlock.copy(alpha = innerAlpha),
+        textPrimary = LightTextPrimary,
+        textSecondary = LightTextSecondary,
+        onTextPrimary = Color.White,
+        divider = Color.Black.copy(alpha = 0.08f),
+        ripple = Color.Black.copy(alpha = 0.10f)
+    )
+}
 
-val LocalGlassColors = staticCompositionLocalOf { darkGlassColors(0.7f) }
+val LocalGlassColors = staticCompositionLocalOf { darkGlassColors(0.9f, 0.40f, true) }
 
 @Composable
 fun GlassNotesTheme(
     isDarkGlass: Boolean = true,
-    glassAlpha: Float = 0.7f,
+    glassAlpha: Float = 0.9f,
+    backgroundAlpha: Float = 0.40f,
+    isGlassEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colors = if (isDarkGlass) darkGlassColors(glassAlpha) else lightGlassColors(glassAlpha)
+    val colors = if (isDarkGlass) darkGlassColors(glassAlpha, backgroundAlpha, isGlassEnabled) else lightGlassColors(glassAlpha, backgroundAlpha, isGlassEnabled)
     val colorScheme = if (isDarkGlass) {
         darkColorScheme(
             primary = colors.textPrimary,

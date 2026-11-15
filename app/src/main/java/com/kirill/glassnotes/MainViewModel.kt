@@ -41,10 +41,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addFolder(name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
+        val order = (_state.value.folders.maxOfOrNull { it.order } ?: -1) + 1
         val folder = FolderItem(
             id = UUID.randomUUID().toString(),
             name = trimmed,
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            order = order
         )
         _state.update { it.copy(folders = it.folders + folder) }
         persistData()
@@ -71,7 +73,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val notes = if (exists) {
                 current.notes.map { if (it.id == note.id) note else it }
             } else {
-                current.notes + note
+                val order = (current.notes.maxOfOrNull { it.order } ?: -1) + 1
+                current.notes + note.copy(order = order)
             }
             current.copy(notes = notes)
         }
@@ -82,6 +85,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { current ->
             current.copy(
                 notes = current.notes.map { if (it.id == noteId) it.copy(isDeleted = true) else it }
+            )
+        }
+        persistData()
+    }
+
+    fun moveNotesToTrash(noteIds: Set<String>) {
+        if (noteIds.isEmpty()) return
+        _state.update { current ->
+            current.copy(
+                notes = current.notes.map { if (it.id in noteIds) it.copy(isDeleted = true) else it }
             )
         }
         persistData()
@@ -111,6 +124,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             )
+        }
+        persistData()
+    }
+
+    // ---------- Корзина ----------
+
+    fun restoreNote(noteId: String) {
+        _state.update { current ->
+            current.copy(
+                notes = current.notes.map { if (it.id == noteId) it.copy(isDeleted = false) else it }
+            )
+        }
+        persistData()
+    }
+
+    fun deleteNoteForever(noteId: String) {
+        _state.update { current ->
+            current.copy(notes = current.notes.filterNot { it.id == noteId })
+        }
+        persistData()
+    }
+
+    fun clearTrash() {
+        _state.update { current ->
+            current.copy(notes = current.notes.filterNot { it.isDeleted })
         }
         persistData()
     }
@@ -152,6 +190,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateSettings(settings: GlassSettings) {
         _state.update { it.copy(settings = settings) }
         storage.saveSettings(settings)
+    }
+
+    /** Переключение темы стекла. */
+    fun setDarkGlass(isDark: Boolean) {
+        val current = _state.value.settings
+        if (current.isDarkGlass == isDark) return
+        updateSettings(current.copy(isDarkGlass = isDark))
+    }
+
+    /** Переключение режима «прозрачного стекла». */
+    fun setGlassEnabled(enabled: Boolean) {
+        val current = _state.value.settings
+        if (current.isGlassEnabled == enabled) return
+        updateSettings(current.copy(isGlassEnabled = enabled))
+    }
+
+    /** Переименование папки. */
+    fun renameFolder(folderId: String, newName: String) {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return
+        _state.update { current ->
+            current.copy(
+                folders = current.folders.map { if (it.id == folderId) it.copy(name = trimmed) else it }
+            )
+        }
+        persistData()
+    }
+
+    /** Перемещение папки на новую позицию (drag-and-drop). */
+    fun moveFolder(fromIndex: Int, toIndex: Int) {
+        _state.update { current ->
+            val sorted = current.folders.sortedBy { it.order }.toMutableList()
+            if (fromIndex !in sorted.indices || toIndex !in sorted.indices || fromIndex == toIndex) {
+                return@update current
+            }
+            val item = sorted.removeAt(fromIndex)
+            sorted.add(toIndex, item)
+            current.copy(folders = sorted.mapIndexed { i, f -> f.copy(order = i) })
+        }
+        persistData()
+    }
+
+    /** Обмен порядком двух заметок (drag-and-drop в сетке). */
+    fun swapNotesOrder(firstId: String, secondId: String) {
+        _state.update { current ->
+            val first = current.notes.firstOrNull { it.id == firstId } ?: return@update current
+            val second = current.notes.firstOrNull { it.id == secondId } ?: return@update current
+            current.copy(
+                notes = current.notes.map { note ->
+                    when (note.id) {
+                        firstId -> note.copy(order = second.order)
+                        secondId -> note.copy(order = first.order)
+                        else -> note
+                    }
+                }
+            )
+        }
+        persistData()
+    }
+
+    /** Актуальный JSON для экспорта резервной копии. */
+    fun buildBackupJson(): String {
+        val s = _state.value
+        return storage.buildBackupJson(AppData(folders = s.folders, notes = s.notes, tasks = s.tasks))
     }
 
     // ---------- Поиск и выбранная папка ----------

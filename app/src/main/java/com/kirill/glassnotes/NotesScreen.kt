@@ -1,31 +1,40 @@
 package com.kirill.glassnotes
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredGridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,32 +50,50 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kirill.glassnotes.ui.theme.ClaretAccent
+import com.kirill.glassnotes.ui.theme.ClaretLight
+import com.kirill.glassnotes.ui.theme.ClaretPinnedBorder
+import com.kirill.glassnotes.ui.theme.ClaretPinnedTint
 import com.kirill.glassnotes.ui.theme.LocalGlassColors
 
 @Composable
 fun NotesScreen(
     viewModel: MainViewModel,
-    onOpenNote: (NoteItem) -> Unit
+    onOpenNote: (NoteItem) -> Unit,
+    onOpenTrash: () -> Unit,
+    onSaveBackup: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenFolders: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     val colors = LocalGlassColors.current
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    var menuExpanded by remember { mutableStateOf(false) }
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var selectedNoteIds by remember { mutableStateOf(setOf<String>()) }
+    val haptic = LocalHapticFeedback.current
 
-    val activeNotes = state.notes.filter { !it.isDeleted }
+    val activeNotes = state.notes.filter { !it.isDeleted }.sortedBy { it.order }
     val folderFiltered = if (state.selectedFolderId == null) {
         activeNotes
     } else {
@@ -85,71 +112,144 @@ fun NotesScreen(
     val pinnedNotes = visibleNotes.filter { it.isPinned }
     val regularNotes = visibleNotes.filter { !it.isPinned }
 
-    Column(Modifier.fillMaxSize()) {
-        if (searchOpen) {
-            SearchBar(
-                query = state.searchQuery,
-                onQueryChange = viewModel::setSearchQuery,
-                onClose = {
-                    viewModel.setSearchQuery("")
-                    searchOpen = false
-                }
-            )
-        } else {
-            NotesHeader(
-                count = activeNotes.size,
-                onSearchClick = { searchOpen = true },
-                onMenuClick = { menuExpanded = true }
-            )
-            FolderRibbon(
-                folders = state.folders,
-                selectedFolderId = state.selectedFolderId,
-                onSelectFolder = viewModel::setSelectedFolderId,
-                onAddFolder = { showAddFolderDialog = true },
-                onDeleteFolder = { folder -> viewModel.deleteFolder(folder.id) }
-            )
-        }
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            if (searchOpen) {
+                SearchBar(
+                    query = state.searchQuery,
+                    onQueryChange = viewModel::setSearchQuery,
+                    onClose = {
+                        viewModel.setSearchQuery("")
+                        searchOpen = false
+                    }
+                )
+            } else {
+                NotesHeader(
+                    count = activeNotes.size,
+                    selectedCount = selectedNoteIds.size,
+                    onClearSelection = { selectedNoteIds = emptySet() },
+                    onTrashSelected = {
+                        viewModel.moveNotesToTrash(selectedNoteIds)
+                        selectedNoteIds = emptySet()
+                    },
+                    onSearchClick = { searchOpen = true },
+                    onOpenTrash = onOpenTrash,
+                    onSaveBackup = onSaveBackup,
+                    onOpenSettings = onOpenSettings,
+                    onOpenFolders = onOpenFolders,
+                    onMenuExpandedChange = { menuOpen = it }
+                )
+                FolderRibbon(
+                    folders = state.folders,
+                    selectedFolderId = state.selectedFolderId,
+                    onSelectFolder = viewModel::setSelectedFolderId,
+                    onAddFolder = { showAddFolderDialog = true },
+                    onDeleteFolder = { folder -> viewModel.deleteFolder(folder.id) }
+                )
+            }
 
-        if (visibleNotes.isEmpty()) {
-            EmptyState(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(pinnedNotes, key = { it.id }) { note ->
-                    NoteCard(
-                        note = note,
-                        onClick = { onOpenNote(note) },
-                        onTogglePin = { viewModel.toggleNotePin(note.id) },
-                        onToggleChecklist = { itemId -> viewModel.toggleChecklistItem(note.id, itemId) }
-                    )
-                }
-                if (pinnedNotes.isNotEmpty() && regularNotes.isNotEmpty()) {
-                    item(key = "gap") { Spacer(Modifier.height(4.dp)) }
-                }
-                items(regularNotes, key = { it.id }) { note ->
-                    NoteCard(
-                        note = note,
-                        onClick = { onOpenNote(note) },
-                        onTogglePin = { viewModel.toggleNotePin(note.id) },
-                        onToggleChecklist = { itemId -> viewModel.toggleChecklistItem(note.id, itemId) }
-                    )
+            if (visibleNotes.isEmpty()) {
+                EmptyState(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clipToBounds()
+                ) {
+                    LazyVerticalStaggeredGrid(
+                        columns = StaggeredGridCells.Fixed(2),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (state.settings.isGlassEnabled) {
+                                    Modifier
+                                        .graphicsLayer { alpha = 0.99f }
+                                        .drawWithContent {
+                                            drawContent()
+                                            drawRect(
+                                                brush = Brush.verticalGradient(
+                                                    0.0f to Color.Transparent,
+                                                    0.045f to Color.Black,
+                                                    1.0f to Color.Black
+                                                ),
+                                                blendMode = BlendMode.DstIn
+                                            )
+                                        }
+                                } else Modifier
+                            ),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 104.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalItemSpacing = 12.dp
+                    ) {
+                    if (pinnedNotes.isNotEmpty()) {
+                        item(key = "pinned_header", span = StaggeredGridItemSpan.FullLine) {
+                            SectionHeader("Закреплённые")
+                        }
+                    }
+                    staggeredGridItems(pinnedNotes, key = { "note_${it.id}" }) { note ->
+                        NoteCard(
+                            note = note,
+                            isDarkTheme = state.settings.isDarkGlass,
+                            modifier = Modifier.animateItem(),
+                            isSelected = note.id in selectedNoteIds,
+                            selectionMode = selectedNoteIds.isNotEmpty(),
+                            onClick = {
+                                if (selectedNoteIds.isNotEmpty()) {
+                                    selectedNoteIds = if (note.id in selectedNoteIds) selectedNoteIds - note.id else selectedNoteIds + note.id
+                                } else {
+                                    onOpenNote(note)
+                                }
+                            },
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                selectedNoteIds = selectedNoteIds + note.id
+                            },
+                            onTogglePin = { viewModel.toggleNotePin(note.id) }
+                        )
+                    }
+                    if (regularNotes.isNotEmpty()) {
+                        item(key = "others_header", span = StaggeredGridItemSpan.FullLine) {
+                            SectionHeader("Другие")
+                        }
+                    }
+                    staggeredGridItems(regularNotes, key = { "note_${it.id}" }) { note ->
+                        NoteCard(
+                            note = note,
+                            isDarkTheme = state.settings.isDarkGlass,
+                            modifier = Modifier.animateItem(),
+                            isSelected = note.id in selectedNoteIds,
+                            selectionMode = selectedNoteIds.isNotEmpty(),
+                            onClick = {
+                                if (selectedNoteIds.isNotEmpty()) {
+                                    selectedNoteIds = if (note.id in selectedNoteIds) selectedNoteIds - note.id else selectedNoteIds + note.id
+                                } else {
+                                    onOpenNote(note)
+                                }
+                            },
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                selectedNoteIds = selectedNoteIds + note.id
+                            },
+                            onTogglePin = { viewModel.toggleNotePin(note.id) }
+                        )
+                    }
                 }
             }
         }
-    }
+        }
 
-    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-        DropdownMenuItem(text = { Text("Корзина") }, onClick = { menuExpanded = false }, enabled = false)
-        DropdownMenuItem(text = { Text("Настройка стекла") }, onClick = { menuExpanded = false }, enabled = false)
+        if (menuOpen) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+            )
+        }
     }
 
     if (showAddFolderDialog) {
@@ -163,8 +263,15 @@ fun NotesScreen(
 @Composable
 private fun NotesHeader(
     count: Int,
+    selectedCount: Int,
+    onClearSelection: () -> Unit,
+    onTrashSelected: () -> Unit,
     onSearchClick: () -> Unit,
-    onMenuClick: () -> Unit
+    onOpenTrash: () -> Unit,
+    onSaveBackup: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenFolders: () -> Unit,
+    onMenuExpandedChange: (Boolean) -> Unit
 ) {
     val colors = LocalGlassColors.current
     Row(
@@ -174,25 +281,79 @@ private fun NotesHeader(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = "Заметки",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
-            if (count > 0) {
+        if (selectedCount > 0) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = count.toString(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary
+                    text = "Выбрано: $selectedCount",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_close),
+                    contentDescription = "Отменить выделение",
+                    tint = colors.textPrimary,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable(onClick = onClearSelection)
                 )
             }
-        }
-        Row {
-            CircleIconButton(R.drawable.ic_search, "Поиск", onClick = onSearchClick)
-            Spacer(Modifier.width(8.dp))
-            CircleIconButton(R.drawable.ic_more_vert, "Меню", onClick = onMenuClick)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(ClaretAccent)
+                    .springClickable(onClick = onTrashSelected)
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_delete),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "Корзина",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        } else {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Заметки",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                if (count > 0) {
+                    Text(
+                        text = pluralize(count, "заметка", "заметки", "заметок"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircleIconButton(R.drawable.ic_search, "Поиск", onClick = onSearchClick)
+                Spacer(Modifier.width(8.dp))
+                CircleIconButton(R.drawable.ic_folder, "Папки", onClick = onOpenFolders)
+                Spacer(Modifier.width(8.dp))
+                GlassOverflowMenu(
+                    onOpenTrash = onOpenTrash,
+                    onSaveBackup = onSaveBackup,
+                    onOpenSettings = onOpenSettings,
+                    onExpandedChange = onMenuExpandedChange
+                )
+            }
         }
     }
 }
@@ -280,7 +441,7 @@ private fun CircleIconButton(
             .clip(CircleShape)
             .background(colors.card)
             .border(1.dp, colors.cardBorder, CircleShape)
-            .clickable(onClick = onClick),
+            .springClickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -337,15 +498,15 @@ private fun FolderChip(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) colors.innerBlock else colors.card)
-            .border(1.dp, colors.cardBorder, RoundedCornerShape(18.dp))
+            .background(if (selected) ClaretAccent else colors.card)
+            .border(1.dp, if (selected) ClaretAccent else colors.cardBorder, RoundedCornerShape(18.dp))
             .pressable(onClick, onLongClick)
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
-            color = if (selected) colors.textPrimary else colors.textSecondary,
+            color = if (selected) Color.White else colors.textSecondary,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1
         )
@@ -361,7 +522,7 @@ private fun AddFolderChip(onClick: () -> Unit) {
             .clip(RoundedCornerShape(18.dp))
             .background(colors.card)
             .border(1.dp, colors.cardBorder, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
+            .springClickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -382,75 +543,116 @@ private fun Modifier.pressable(onClick: () -> Unit, onLongClick: (() -> Unit)? =
     }
 
 @Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = LocalGlassColors.current.textSecondary,
+        modifier = Modifier.padding(bottom = 6.dp)
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun NoteCard(
     note: NoteItem,
+    isDarkTheme: Boolean,
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false,
+    selectionMode: Boolean = false,
     onClick: () -> Unit,
-    onTogglePin: () -> Unit,
-    onToggleChecklist: (String) -> Unit
+    onLongClick: () -> Unit,
+    onTogglePin: () -> Unit
 ) {
     val colors = LocalGlassColors.current
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(colors.card)
-            .border(1.dp, colors.cardBorder, RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
+            .then(if (note.isPinned && isDarkTheme) Modifier.background(ClaretPinnedTint) else Modifier)
+            .border(
+                border = if (note.isPinned) BorderStroke(1.5.dp, ClaretPinnedBorder) else BorderStroke(1.dp, colors.cardBorder),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (note.title.isNotBlank()) {
                 Text(
                     text = note.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.textPrimary,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkTheme) Color.White else Color(0xFF09090B),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(bottom = 10.dp)
                 )
             } else {
                 Spacer(Modifier.weight(1f))
             }
-            Icon(
-                painter = painterResource(R.drawable.ic_push_pin),
-                contentDescription = "Закрепить",
-                tint = if (note.isPinned) colors.textPrimary else colors.textSecondary,
-                modifier = Modifier
-                    .size(20.dp)
-                    .clickable(onClick = onTogglePin)
-            )
-        }
-
-        if (note.content.isNotBlank() || note.checklist.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(colors.innerBlock)
-                    .padding(12.dp)
-            ) {
-                if (note.content.isNotBlank()) {
-                    Text(
-                        text = note.content,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textPrimary,
-                        maxLines = 8,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (note.checklist.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    note.checklist.forEach { item ->
-                        ChecklistRow(item = item, onClick = { onToggleChecklist(item.id) })
-                        Spacer(Modifier.height(6.dp))
+            if (selectionMode) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(if (isSelected) ClaretAccent else Color.Transparent)
+                        .border(1.5.dp, if (isSelected) ClaretAccent else colors.textSecondary, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_check),
+                            contentDescription = "Выбрано",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.ic_push_pin),
+                    contentDescription = "Закрепить",
+                    tint = if (note.isPinned) ClaretLight else colors.textSecondary,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clickable(onClick = onTogglePin)
+                )
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        if (note.content.isNotBlank()) {
+            Text(
+                text = note.content,
+                fontSize = 14.sp,
+                color = colors.textPrimary.copy(alpha = 0.78f),
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (note.checklist.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            note.checklist.take(5).forEach { item ->
+                ChecklistRow(item = item)
+                Spacer(Modifier.height(4.dp))
+            }
+            if (note.checklist.size > 5) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "+ ещё ${note.checklist.size - 5}",
+                    fontSize = 12.sp,
+                    color = colors.textSecondary.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
         Text(
             text = formatTimestamp(note.createdAt),
             style = MaterialTheme.typography.labelMedium,
@@ -460,7 +662,7 @@ private fun NoteCard(
 }
 
 @Composable
-private fun ChecklistRow(item: ChecklistItem, onClick: () -> Unit) {
+private fun ChecklistRow(item: ChecklistItem) {
     val colors = LocalGlassColors.current
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -475,8 +677,7 @@ private fun ChecklistRow(item: ChecklistItem, onClick: () -> Unit) {
                     width = 1.5.dp,
                     color = if (item.isChecked) colors.textPrimary else colors.textSecondary,
                     shape = RoundedCornerShape(6.dp)
-                )
-                .clickable(onClick = onClick),
+                ),
             contentAlignment = Alignment.Center
         ) {
             if (item.isChecked) {
@@ -491,8 +692,8 @@ private fun ChecklistRow(item: ChecklistItem, onClick: () -> Unit) {
         Spacer(Modifier.width(8.dp))
         Text(
             text = item.text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (item.isChecked) colors.textSecondary else colors.textPrimary,
+            fontSize = 14.sp,
+            color = if (item.isChecked) colors.textSecondary else colors.textPrimary.copy(alpha = 0.78f),
             textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None
         )
     }
@@ -534,34 +735,97 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 private fun AddFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     val colors = LocalGlassColors.current
     var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Новая папка", color = colors.textPrimary) },
-        text = {
-            BasicTextField(
-                value = name,
-                onValueChange = { name = it },
-                singleLine = true,
-                textStyle = TextStyle(color = colors.textPrimary, fontSize = 16.sp),
-                cursorBrush = SolidColor(colors.textPrimary),
-                modifier = Modifier.fillMaxWidth(),
-                decorationBox = { inner ->
-                    Box {
-                        if (name.isEmpty()) {
-                            Text("Название папки", color = colors.textSecondary, fontSize = 16.sp)
-                        }
-                        inner()
-                    }
-                }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.42f))
+                .clickable(onClick = onDismiss)
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .imePadding()
+                .padding(horizontal = 28.dp)
+                .padding(bottom = 36.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(colors.card)
+                .border(1.dp, colors.cardBorder, RoundedCornerShape(24.dp))
+                .padding(20.dp)
+        ) {
+            Text(
+                text = "Новая папка",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
             )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(name); onDismiss() }) { Text("Создать") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            Spacer(Modifier.height(16.dp))
+            val fieldTextStyle = TextStyle(color = colors.textPrimary, fontSize = 16.sp, lineHeight = 22.sp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.innerBlock)
+                    .border(1.dp, colors.cardBorder, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                BasicTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    textStyle = fieldTextStyle,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    cursorBrush = SolidColor(colors.textPrimary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (name.isEmpty()) {
+                                Text("Название папки", color = colors.textSecondary, style = fieldTextStyle)
+                            }
+                            inner()
+                        }
+                    }
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onDismiss) { Text("Отмена", color = colors.textSecondary) }
+                Spacer(Modifier.width(12.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(ClaretAccent)
+                        .clickable {
+                            if (name.isNotBlank()) {
+                                onConfirm(name)
+                                onDismiss()
+                            }
+                        }
+                        .padding(horizontal = 22.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Создать",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
-    )
+    }
 }
 
 
