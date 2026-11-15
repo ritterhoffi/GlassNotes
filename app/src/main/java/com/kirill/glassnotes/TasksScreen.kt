@@ -1,5 +1,7 @@
 package com.kirill.glassnotes
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -57,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import com.kirill.glassnotes.ui.theme.ClaretAccent
 import com.kirill.glassnotes.ui.theme.LocalGlassColors
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TasksScreen(
     viewModel: MainViewModel,
@@ -68,6 +73,9 @@ fun TasksScreen(
     val colors = LocalGlassColors.current
 
     var menuOpen by remember { mutableStateOf(false) }
+
+    val telegramFling = rememberTelegramFlingBehavior()
+    val (overscrollConnection, overscrollModifier) = rememberSpringOverscroll()
 
     val tasks = state.tasks
     val openTasks = tasks.filter { !it.isCompleted }
@@ -137,10 +145,14 @@ fun TasksScreen(
                     }
                 }
             } else {
+                CompositionLocalProvider(LocalOverscrollFactory provides null) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(1f)
+                        .nestedScroll(overscrollConnection)
+                        .then(overscrollModifier),
+                    flingBehavior = telegramFling,
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -161,6 +173,7 @@ fun TasksScreen(
                             )
                         }
                     }
+                }
                 }
             }
         }

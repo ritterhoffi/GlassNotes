@@ -57,9 +57,29 @@ import com.kirill.glassnotes.ui.theme.GlassNotesTheme
 import com.kirill.glassnotes.ui.theme.LocalGlassColors
 
 class MainActivity : ComponentActivity() {
+
+    override fun onResume() {
+        super.onResume()
+        setMaxRefreshRate()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun setMaxRefreshRate() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            val maxMode = windowManager.defaultDisplay.supportedModes.maxByOrNull { it.refreshRate }
+            if (maxMode != null) {
+                window.attributes = window.attributes.apply { preferredDisplayModeId = maxMode.modeId }
+            }
+        } catch (_: Throwable) {
+            // Не критично — оставляем режим по умолчанию.
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        setMaxRefreshRate()
         window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
         val initialBlurRadius = AppStorage(this).loadSettings().blurRadius

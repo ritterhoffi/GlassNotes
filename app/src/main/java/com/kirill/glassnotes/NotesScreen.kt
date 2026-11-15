@@ -17,6 +17,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -53,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -74,6 +76,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -95,6 +98,7 @@ import com.kirill.glassnotes.ui.theme.ClaretPinnedTint
 import com.kirill.glassnotes.ui.theme.LocalGlassColors
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NotesScreen(
     viewModel: MainViewModel,
@@ -121,6 +125,9 @@ fun NotesScreen(
             lastToggledNoteId = null
         }
     }
+
+    val telegramFling = rememberTelegramFlingBehavior()
+    val (overscrollConnection, overscrollModifier) = rememberSpringOverscroll()
 
     val activeNotes = state.notes.filter { !it.isDeleted }.sortedBy { it.order }
     val folderFiltered = if (state.selectedFolderId == null) {
@@ -207,10 +214,13 @@ fun NotesScreen(
                             } else Modifier
                         )
                 ) {
+                    CompositionLocalProvider(LocalOverscrollFactory provides null) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(scrollState)
+                            .nestedScroll(overscrollConnection)
+                            .then(overscrollModifier)
+                            .verticalScroll(scrollState, flingBehavior = telegramFling)
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
                         FlyingNotesGrid(
@@ -235,6 +245,7 @@ fun NotesScreen(
                             }
                         )
                         Spacer(Modifier.height(92.dp))
+                    }
                     }
 
                     if (!state.settings.isGlassEnabled) {
