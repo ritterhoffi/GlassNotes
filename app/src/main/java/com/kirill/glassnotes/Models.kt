@@ -46,11 +46,11 @@ data class GlassSettings(
 
 /** Эффективный радиус размытия обоев в зависимости от режима стекла. */
 val GlassSettings.blurRadius: Int
-    get() = if (isGlassEnabled) 90 else 0
+    get() = if (isGlassEnabled) (90 * 0.95f).toInt() else 0
 
 /** Эффективная плотность фона экрана. */
 val GlassSettings.backgroundAlpha: Float
-    get() = if (isGlassEnabled) 0.40f else 1.0f
+    get() = if (isGlassEnabled) 0.30f else 1.0f
 
 /** Эффективная плотность карточек. */
 val GlassSettings.glassAlpha: Float

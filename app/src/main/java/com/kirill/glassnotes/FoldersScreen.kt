@@ -1,5 +1,7 @@
 package com.kirill.glassnotes
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -8,10 +10,10 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,12 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -42,16 +44,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextRange
@@ -84,28 +94,194 @@ fun FoldersScreen(
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val rowHeightPx = with(density) { 56.dp.toPx() }
-
-    LaunchedEffect(draggedFolderId, dragOffsetY) {
-        val draggedId = draggedFolderId ?: return@LaunchedEffect
-        val fromIdx = folders.indexOfFirst { it.id == draggedId }
-        if (fromIdx < 0) return@LaunchedEffect
-        val rows = (dragOffsetY / rowHeightPx).roundToInt()
-        val toIdx = (fromIdx + rows).coerceIn(0, folders.lastIndex)
-        if (toIdx != fromIdx) {
-            viewModel.moveFolder(fromIdx, toIdx)
-            dragOffsetY -= (toIdx - fromIdx) * rowHeightPx
-        }
+    val draggedFromIndex = draggedFolderId
+        ?.let { id -> folders.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+    val draggedTargetIndex = draggedFromIndex?.let { from ->
+        (from + (dragOffsetY / rowHeightPx).roundToInt())
+            .coerceIn(0, (folders.size - 1).coerceAtLeast(0))
     }
 
-    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-        Row(
+    val flingBehavior = rememberTelegramFlingBehavior()
+    val (overscrollConnection, overscrollModifier) = rememberSpringOverscroll()
+    val scrollState = rememberScrollState()
+    var headerBottomPx by remember { mutableStateOf(0f) }
+    var viewportTopPx by remember { mutableStateOf(0f) }
+    var viewportHeightPx by remember { mutableStateOf(0f) }
+    val fadeEndOffsetPx = with(density) { 28.dp.toPx() }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .graphicsLayer { alpha = 0.99f }
+                .onGloballyPositioned {
+                    viewportTopPx = it.boundsInRoot().top
+                    viewportHeightPx = it.size.height.toFloat()
+                }
+                .drawWithContent {
+                    drawContent()
+                    if (viewportHeightPx > 0f && headerBottomPx > viewportTopPx) {
+                        val relHeaderBottom = (headerBottomPx - viewportTopPx).coerceAtLeast(0f)
+                        val fadeStart = (relHeaderBottom / viewportHeightPx).coerceIn(0f, 1f)
+                        val fadeEnd = ((relHeaderBottom + fadeEndOffsetPx) / viewportHeightPx).coerceIn(0f, 1f)
+                        val bottomFadeHeight = 24.dp.toPx()
+                        val bottomFadeStart = ((viewportHeightPx - bottomFadeHeight) / viewportHeightPx).coerceIn(fadeEnd, 1f)
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0.0f to Color.Transparent,
+                                fadeStart to Color.Transparent,
+                                fadeEnd to Color.Black,
+                                bottomFadeStart to Color.Black,
+                                1.0f to Color.Transparent
+                            ),
+                            blendMode = BlendMode.DstIn
+                        )
+                    }
+                }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState, flingBehavior = flingBehavior)
+                    .nestedScroll(overscrollConnection)
+                    .then(overscrollModifier)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Spacer(Modifier.height(64.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .background(colors.card)
+                            .border(1.5.dp, ClaretAccent, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_folder),
+                            contentDescription = null,
+                            tint = ClaretLight,
+                            modifier = Modifier.size(44.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "Создавайте папки и перетаскивайте их, чтобы изменить порядок",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 24.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(colors.card)
+                        .border(1.dp, colors.cardBorder, RoundedCornerShape(20.dp))
+                ) {
+                    if (folders.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Нет папок", color = colors.textSecondary, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    } else {
+                        Column(Modifier.fillMaxWidth().clipToBounds()) {
+                            folders.forEachIndexed { index, folder ->
+                                val shiftPx = if (draggedFromIndex != null && draggedTargetIndex != null && draggedFolderId != folder.id) {
+                                    when {
+                                        draggedTargetIndex > draggedFromIndex && index in (draggedFromIndex + 1)..draggedTargetIndex -> -rowHeightPx
+                                        draggedTargetIndex < draggedFromIndex && index in draggedTargetIndex until draggedFromIndex -> rowHeightPx
+                                        else -> 0f
+                                    }
+                                } else 0f
+                                FolderRow(
+                                    folder = folder,
+                                    modifier = Modifier,
+                                    isDragging = draggedFolderId == folder.id,
+                                    dragOffsetY = if (draggedFolderId == folder.id) dragOffsetY else 0f,
+                                    shiftPx = shiftPx,
+                                    isAnyDragging = draggedFolderId != null,
+                                    onDragStart = { draggedFolderId = folder.id; dragOffsetY = 0f },
+                                    onDrag = { dy -> dragOffsetY += dy },
+                                    onDragEnd = {
+                                        val from = draggedFromIndex
+                                        val to = draggedTargetIndex
+                                        if (from != null && to != null && from != to) {
+                                            viewModel.moveFolder(from, to)
+                                        }
+                                        draggedFolderId = null
+                                        dragOffsetY = 0f
+                                    },
+                                    onRename = { renameTarget = folder },
+                                    onDelete = { viewModel.deleteFolder(folder.id) }
+                                )
+                                if (index < folders.lastIndex) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        color = colors.divider,
+                                        thickness = 1.dp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = colors.divider,
+                        thickness = 1.dp
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .springClickable { showCreateDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_add),
+                            contentDescription = null,
+                            tint = ClaretAccent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "Создать новую папку",
+                            color = ClaretAccent,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 8.dp, vertical = 8.dp)
+                .onGloballyPositioned { headerBottomPx = it.boundsInRoot().bottom }
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_arrow_back),
                     contentDescription = "Назад",
@@ -116,116 +292,9 @@ fun FoldersScreen(
                 text = "Папки",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
+                color = colors.textPrimary,
+                modifier = Modifier.align(Alignment.Center)
             )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(colors.card)
-                    .border(1.5.dp, ClaretAccent, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_folder),
-                    contentDescription = null,
-                    tint = ClaretLight,
-                    modifier = Modifier.size(44.dp)
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Создавайте папки и перетаскивайте их, чтобы изменить порядок",
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.textSecondary,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false)
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(colors.card)
-                .border(1.dp, colors.cardBorder, RoundedCornerShape(20.dp))
-        ) {
-            if (folders.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Нет папок", color = colors.textSecondary, style = MaterialTheme.typography.bodyMedium)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false)
-                ) {
-                    itemsIndexed(folders, key = { _, folder -> folder.id }) { index, folder ->
-                        FolderRow(
-                            folder = folder,
-                            modifier = if (draggedFolderId == folder.id) Modifier else Modifier.animateItem(),
-                            isDragging = draggedFolderId == folder.id,
-                            dragOffsetY = if (draggedFolderId == folder.id) dragOffsetY else 0f,
-                            onDragStart = { draggedFolderId = folder.id; dragOffsetY = 0f },
-                            onDrag = { dy -> dragOffsetY += dy },
-                            onDragEnd = {
-                                draggedFolderId = null
-                                dragOffsetY = 0f
-                            },
-                            onRename = { renameTarget = folder },
-                            onDelete = { viewModel.deleteFolder(folder.id) }
-                        )
-                        if (index < folders.lastIndex) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = colors.divider,
-                                thickness = 1.dp
-                            )
-                        }
-                    }
-                }
-            }
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colors.divider,
-                thickness = 1.dp
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .springClickable { showCreateDialog = true }
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_add),
-                    contentDescription = null,
-                    tint = ClaretAccent,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = "Создать новую папку",
-                    color = ClaretAccent,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
-            }
         }
     }
 
@@ -260,6 +329,8 @@ private fun FolderRow(
     modifier: Modifier = Modifier,
     isDragging: Boolean = false,
     dragOffsetY: Float = 0f,
+    shiftPx: Float = 0f,
+    isAnyDragging: Boolean = false,
     onDragStart: () -> Unit = {},
     onDrag: (Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
@@ -268,6 +339,19 @@ private fun FolderRow(
 ) {
     val colors = LocalGlassColors.current
     var menuExpanded by remember { mutableStateOf(false) }
+    val currentOnDragStart = rememberUpdatedState(onDragStart)
+    val currentOnDrag = rememberUpdatedState(onDrag)
+    val currentOnDragEnd = rememberUpdatedState(onDragEnd)
+
+    val neighborShift = remember(folder.id) { Animatable(0f) }
+    LaunchedEffect(isAnyDragging, shiftPx) {
+        if (isAnyDragging) {
+            neighborShift.animateTo(shiftPx, spring(dampingRatio = 0.85f, stiffness = 480f))
+        } else {
+            neighborShift.snapTo(0f)
+        }
+    }
+    val neighborShiftY = neighborShift.value
 
     Row(
         modifier = modifier
@@ -278,7 +362,7 @@ private fun FolderRow(
                     scaleX = 1.03f
                     scaleY = 1.03f
                 } else {
-                    translationY = 0f
+                    translationY = neighborShiftY
                     scaleX = 1f
                     scaleY = 1f
                 }
@@ -296,10 +380,10 @@ private fun FolderRow(
                 .size(24.dp)
                 .pointerInput(folder.id) {
                     detectDragGestures(
-                        onDragStart = { onDragStart() },
-                        onDrag = { change, amount -> change.consume(); onDrag(amount.y) },
-                        onDragEnd = { onDragEnd() },
-                        onDragCancel = { onDragEnd() }
+                        onDragStart = { currentOnDragStart.value() },
+                        onDrag = { change, amount -> change.consume(); currentOnDrag.value(amount.y) },
+                        onDragEnd = { currentOnDragEnd.value() },
+                        onDragCancel = { currentOnDragEnd.value() }
                     )
                 }
         )
@@ -462,6 +546,3 @@ private fun FolderNameDialog(
         }
     }
 }
-
-
-

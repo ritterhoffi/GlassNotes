@@ -14,7 +14,7 @@ val LightBackground = Color(0xFFF4F4F6)
 val LightCard = Color(0xFFFFFFFF)
 val LightInnerBlock = Color(0xFFE4E4E7)
 val LightTextPrimary = Color(0xFF18181B)
-val LightTextSecondary = Color(0xFF52525B)
+val LightTextSecondary = Color(0xFF26282E)
 
 // Фирменный бордовый акцент
 val ClaretAccent = Color(0xFF8E2443)

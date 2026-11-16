@@ -163,6 +163,7 @@ fun NotesScreen(
                 NotesHeader(
                     count = activeNotes.size,
                     selectedCount = selectedNoteIds.size,
+                    isDarkGlass = state.settings.isDarkGlass,
                     onClearSelection = { selectedNoteIds = emptySet() },
                     onTrashSelected = {
                         viewModel.moveNotesToTrash(selectedNoteIds)
@@ -287,6 +288,7 @@ fun NotesScreen(
 private fun NotesHeader(
     count: Int,
     selectedCount: Int,
+    isDarkGlass: Boolean,
     onClearSelection: () -> Unit,
     onTrashSelected: () -> Unit,
     onSearchClick: () -> Unit,
@@ -378,7 +380,7 @@ private fun NotesHeader(
                             Text(
                                 text = pluralize(count, "заметка", "заметки", "заметок"),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = colors.textSecondary
+                                color = if (isDarkGlass) colors.textSecondary else colors.textPrimary.copy(alpha = 0.78f)
                             )
                         }
                     }
@@ -585,12 +587,13 @@ private fun Modifier.pressable(onClick: () -> Unit, onLongClick: (() -> Unit)? =
     }
 
 @Composable
-private fun SectionHeader(text: String) {
+private fun SectionHeader(text: String, isDarkTheme: Boolean) {
+    val colors = LocalGlassColors.current
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.SemiBold,
-        color = LocalGlassColors.current.textSecondary,
+        fontWeight = FontWeight.Medium,
+        color = if (isDarkTheme) colors.textSecondary else colors.textPrimary.copy(alpha = 0.78f),
         modifier = Modifier.padding(bottom = 6.dp)
     )
 }
@@ -691,7 +694,7 @@ private fun FlyingNotesGrid(
                         .fillMaxWidth()
                         .onSizeChanged { pinnedHeaderHeight = Dp(it.height / localDensity.density) }
                 ) {
-                    SectionHeader("Закреплённые")
+                    SectionHeader("Закреплённые", isDarkTheme)
                 }
             }
             if (regularNotes.isNotEmpty()) {
@@ -701,7 +704,7 @@ private fun FlyingNotesGrid(
                         .offset(y = animatedRegularHeaderY.value)
                         .onSizeChanged { regularHeaderHeight = Dp(it.height / localDensity.density) }
                 ) {
-                    SectionHeader("Другие")
+                    SectionHeader("Другие", isDarkTheme)
                 }
             }
 

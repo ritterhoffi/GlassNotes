@@ -91,12 +91,12 @@ class MainActivity : ComponentActivity() {
             val isGlassEnabled = state.settings.isGlassEnabled
             val blurRadius = state.settings.blurRadius
             LaunchedEffect(isGlassEnabled, blurRadius) {
-                window.attributes = window.attributes.apply { blurBehindRadius = if (isGlassEnabled) 90 else 0 }
+                window.attributes = window.attributes.apply { blurBehindRadius = if (isGlassEnabled) blurRadius else 0 }
                 if (isGlassEnabled) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
                     window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        window.setBackgroundBlurRadius(90)
+                        window.setBackgroundBlurRadius(blurRadius)
                     }
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
@@ -361,5 +361,3 @@ private fun GlassTabItem(
         )
     }
 }
-
-
